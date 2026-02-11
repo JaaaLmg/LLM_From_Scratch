@@ -113,6 +113,9 @@ class GPT(nn.Module):
         self.ln_f = nn.LayerNorm(config.n_embd)  # 最后的一侧层归一化
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)  # 语言模型头，将词向量投影回字典，该层没有bias
 
+        # 共享权重
+        self.wte.weight = self.lm_head.weight
+
     @classmethod
     def from_pretrained(cls, model_type):
         """从huggingface加载预训练的GPT-2模型权重"""
