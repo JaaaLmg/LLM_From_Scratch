@@ -139,10 +139,10 @@ class GPT(nn.Module):
 
         # 查看模型的参数
         # 查看模型的参数
-        print("=================================================")
-        print("该文件复现的GPT2模型参数如下：")
-        for k,v in sd.items():
-            print(k, v.shape)
+        # print("=================================================")
+        # print("该文件复现的GPT2模型参数如下：")
+        # for k,v in sd.items():
+        #     print(k, v.shape)
 
         # 从huggingface/transformers中初始化一个模型
         model_hf = GPT2LMHeadModel.from_pretrained(model_type)
@@ -217,6 +217,8 @@ if __name__ == "__main__":
     x = tokens.to(device)  # x的形状：(B=5, T)
 
     # 开始生成
+    print("=================================================")
+    print("开始生成文本...")
     torch.manual_seed(42)
     torch.cuda.manual_seed(42)
     while x.size(1) < max_length:
@@ -230,7 +232,6 @@ if __name__ == "__main__":
             x = torch.cat((x,xcol), dim=1)   # 将新生成的词追加到输入的末尾
 
     # 打印生成的文本
-    print("=================================================")
     for i in range(0, num_retrun_sequences):
         tokens = x[i, :max_length].tolist()
         decoded = enc.decode(tokens)
