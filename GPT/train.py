@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 import tiktoken
+import time
 
 from model import GPTConfig, GPT
 
@@ -45,25 +46,43 @@ class DataLoaderLite:
 if __name__ == "__main__":
     
     # ==============下面的内容用于调试训练流程，基于tinyshakespeare数据集=============
+    hascuda = torch.cuda.is_available()
     torch.manual_seed(42)
-    if torch.cuda.is_available():
+    if hascuda:
         torch.cuda.manual_seed(42)
 
-    B, T = 4, 32
+    B, T = 8, 128
     data_dir = "../data/input.txt"
     print("==============   开始加载数据...  ================")
     dataloader = DataLoaderLite(data_dir, B, T)
+
+    torch.set_float32_matmul_precision('high')    # 显式指定矩阵乘法精度，使用Tensor Float32 Precision
+
     model = GPT(GPTConfig)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if hascuda else "cpu")
+    device_type = "cuda" if hascuda else "cpu"
     model.to(device)
+    # model = torch.compile(model)    # 使用PyTorch的编译功能，优化训练
 
     # 训练循环
     print("================   开始训练...  ==================")
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
     for i in range(50):
+        t0 = time.time()
         optimizer.zero_grad()
         x, y = dataloader.next_batch()
-        logits, loss = model(x, y)
+        # logits, loss = model(x, y)
+
+        # 这里使用自动混合精度训练，pytorch会在某些运算中自动进行精度转换。对于Ampere架构GPU，使用bfloat16精度可以获得更好的性能
+        with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+            logits, loss = model(x, y)
+
         loss.backward()
         optimizer.step()
-        print(f"step: {i}, loss:{loss.item()}")
+
+        if hascuda:
+            torch.cuda.synchronize()
+        t1 = time.time()
+        dt = (t1 - t0) * 1000
+        tokens_per_sec = (dataloader.B * dataloader.T) / (t1 - t0)
+        print(f"step: {i}, loss: {loss.item()}, dt: {dt:.2f}ms, tokens/s: {tokens_per_sec:.2f}")
