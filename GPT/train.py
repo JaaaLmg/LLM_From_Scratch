@@ -2,6 +2,7 @@
 GPT2模型的训练脚本，包括数据集的加载、模型训练、模型保存等
 """
 
+from dataclasses import dataclass
 import os
 import torch
 import torch.nn as nn
@@ -12,8 +13,21 @@ import time
 
 from model import GPTConfig, GPT
 
-# 手写一个简易的数据加载器
+
+@dataclass
+class TrainConfig:
+    """训练相关超参数"""
+    max_lr = 6e-4
+    min_lr = max_lr * 0.1
+    warmup_steps = 10
+    max_steps = 50
+
+
+
 class DataLoaderLite:
+    """
+    简易的数据加载器
+    """
     def __init__(self, data_dir, B, T):
         self.B = B   # 批量大小
         self.T = T   # 句子长度
@@ -41,6 +55,23 @@ class DataLoaderLite:
             self.current_position = 0
         return x, y
 
+def get_lr(step, config=TrainConfig):
+    """
+    学习率调度器
+    """
+    # warmup阶段，线性
+    if step < config.warmup_steps:
+        return config.max_lr * (step+1) / config.warmup_steps
+    # 末段，保持最小学习率
+    if step > config.max_steps:
+        return config.min_lr
+    # decay阶段，余弦退火
+    decay_ratio = (step - config.warmup_steps) / (config.max_steps - config.warmup_steps)
+    assert 0 <= decay_ratio <= 1.0
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
+    return config.min_lr + coeff * (config.max_lr - config.min_lr)
+
+
 
 
 if __name__ == "__main__":
@@ -67,8 +98,9 @@ if __name__ == "__main__":
 
     # 训练循环
     print("================   开始训练...  ==================")
-    optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
-    for i in range(50):
+    # optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8)
+    optimizer = model.configure_optimizers(weight_decay=0.1, learning_rate=6e-4, device_type=device_type)
+    for step in range(50):
         t0 = time.time()
         optimizer.zero_grad()
         x, y = dataloader.next_batch()
@@ -79,6 +111,10 @@ if __name__ == "__main__":
         #     logits, loss = model(x, y)
 
         loss.backward()
+        norm = nn.utils.clip_grad_norm_(model.parameters(), 1.0)    # 梯度裁剪
+        lr = get_lr(step)    # 从调度器中获取学习率
+        for param_group in optimizer.param_groups:
+            param_group["lr"] = lr
         optimizer.step()
 
         if hascuda:
@@ -86,4 +122,4 @@ if __name__ == "__main__":
         t1 = time.time()
         dt = (t1 - t0) * 1000
         tokens_per_sec = (dataloader.B * dataloader.T) / (t1 - t0)
-        print(f"step: {i}, loss: {loss.item()}, dt: {dt:.2f}ms, tokens/s: {tokens_per_sec:.2f}")
+        print(f"step: {step} | loss: {loss.item()} | lr: {lr:.4e} | norm: {norm:.4f} | dt: {dt:.2f}ms | tokens/s: {tokens_per_sec:.2f}")

@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+import inspect
 
 # 先定义模型的主要参数
 @dataclass
@@ -210,6 +211,32 @@ class GPT(nn.Module):
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
 
         return logits, loss
+    
+    def configure_optimizers(self, weight_decay, learning_rate, device_type):
+        """优化过程的参数设置"""
+        # 获取所有需要训练的参数
+        param_dict = {pn: p for pn, p in self.named_parameters() if p.requires_grad}
+        # 把这些参数划分为需要weight decay和不需要weight decay的参数
+        decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]    # 我们希望在维度大于等于2的参数上应用weight decay
+        no_decay_params = [p for n, p in param_dict.items() if p.dim() < 2]
+        # 整理需要传入优化器的参数
+        optim_groups = [
+            {"params": decay_params, "weight_decay": weight_decay},
+            {"params": no_decay_params, "weight_decay": 0.0},
+        ]
+        # 创建优化器
+        fused_available = "fused" in inspect.signature(torch.optim.AdamW).parameters   # 检查torch.optim.AdamW的参数列表中是否包含fused，在高版本的PyTorch中，fused功能可用
+        use_fused = fused_available and device_type == "cuda"
+        print("using fused AdamW:", use_fused)
+        optimizer = torch.optim.AdamW(
+            optim_groups,
+            lr=learning_rate,
+            betas=(0.9, 0.95),
+            eps=1e-8,
+            fused=use_fused
+        )
+        return optimizer
+        
 
 
 if __name__ == "__main__":
