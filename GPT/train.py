@@ -45,7 +45,10 @@ class DataLoaderLite:
 if __name__ == "__main__":
     
     # ==============下面的内容用于调试训练流程，基于tinyshakespeare数据集=============
-    
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(42)
+
     B, T = 4, 32
     data_dir = "../data/input.txt"
     print("==============   开始加载数据...  ================")

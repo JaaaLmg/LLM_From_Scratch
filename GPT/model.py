@@ -116,6 +116,9 @@ class GPT(nn.Module):
         # 共享权重
         self.wte.weight = self.lm_head.weight
 
+        # 模型参数初始化
+        self.apply(self._init_weights)
+
     @classmethod
     def from_pretrained(cls, model_type):
         """从huggingface加载预训练的GPT-2模型权重"""
@@ -173,6 +176,16 @@ class GPT(nn.Module):
 
         return model
 
+    def _init_weights(self, module):
+        """初始化模型的参数"""
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        # 对于LayerNorm层，使用pytorch默认的初始参数（weight=1.0, bias=0.0）
+    
     def forward(self, idx, targets=None):
         """
         前向传播
