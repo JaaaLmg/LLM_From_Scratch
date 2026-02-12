@@ -18,7 +18,7 @@ class GPTConfig:
     n_head: int = 12         # 注意力头数为12
     n_embd: int = 768        # embedding维度为768
     dropout: float = 0.1     # dropout率
-    flash_attn: bool = False     # 是否使用Flash Attention  flash attention在pytorch 1.9.0中才支持
+    flash_attn: bool = True     # 是否使用Flash Attention  flash attention在pytorch 1.9.0中才支持
 
 
 
@@ -62,6 +62,7 @@ class CausalSelfAttention(nn.Module):
         self.c_attn = nn.Linear(config.n_embd, config.n_embd*3)     # 从词向量中映射到Q、K、V向量  (B, T, C) -> (B, T, 3C)
         self.c_proj = nn.Linear(config.n_embd, config.n_embd)       # 将concat之后的Q、K、V向量映射回词向量  (B, T, C) -> (B, T, C)
         self.attn_dropout = nn.Dropout(config.dropout)
+        self.dropout = config.dropout
 
         self.n_embd = config.n_embd
         self.n_head = config.n_head

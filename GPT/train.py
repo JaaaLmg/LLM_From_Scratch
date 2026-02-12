@@ -58,7 +58,8 @@ if __name__ == "__main__":
 
     torch.set_float32_matmul_precision('high')    # 显式指定矩阵乘法精度，使用Tensor Float32 Precision
 
-    model = GPT(GPTConfig)
+    # model = GPT(GPTConfig())
+    model = GPT(GPTConfig(vocab_size=50304))    # 把vocab_size改为50304，更好地优化计算效率
     device = torch.device("cuda" if hascuda else "cpu")
     device_type = "cuda" if hascuda else "cpu"
     model.to(device)
@@ -71,11 +72,11 @@ if __name__ == "__main__":
         t0 = time.time()
         optimizer.zero_grad()
         x, y = dataloader.next_batch()
-        # logits, loss = model(x, y)
+        logits, loss = model(x, y)
 
         # 这里使用自动混合精度训练，pytorch会在某些运算中自动进行精度转换。对于Ampere架构GPU，使用bfloat16精度可以获得更好的性能
-        with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
-            logits, loss = model(x, y)
+        # with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+        #     logits, loss = model(x, y)
 
         loss.backward()
         optimizer.step()
