@@ -82,9 +82,14 @@ if __name__ == "__main__":
     if hascuda:
         torch.cuda.manual_seed(42)
 
-    B, T = 8, 128
-    data_dir = "../data/input.txt"
     print("==============   开始加载数据...  ================")
+    total_batch_size = 524288      # 对齐论文数据：batch_size = 0.5M tokens，向上取2的19次幂
+    B, T = 8, 128
+    assert total_batch_size % (B * T) == 0
+    grad_accum_steps:int = total_batch_size // (B * T)    # 对一个batch，分多次计算梯度，再累加求均值
+    print(f"一个batch的大小：{total_batch_size} => 需要累计梯度的步数：{grad_accum_steps}")
+
+    data_dir = "../data/input.txt"
     dataloader = DataLoaderLite(data_dir, B, T)
 
     torch.set_float32_matmul_precision('high')    # 显式指定矩阵乘法精度，使用Tensor Float32 Precision
@@ -103,14 +108,18 @@ if __name__ == "__main__":
     for step in range(50):
         t0 = time.time()
         optimizer.zero_grad()
-        x, y = dataloader.next_batch()
-        logits, loss = model(x, y)
+        loss_accum = 0
+        for micro_step in range(grad_accum_steps):
+            x, y = dataloader.next_batch()
+            x, y = x.to(device), y.to(device)
+            logits, loss = model(x, y)
+            # 这里使用自动混合精度训练，pytorch会在某些运算中自动进行精度转换。对于Ampere架构GPU，使用bfloat16精度可以获得更好的性能
+            # with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+            #     logits, loss = model(x, y)
+            loss = loss / grad_accum_steps    # 梯度累积之后还要取均值
+            loss_accum += loss.detach()
+            loss.backward()
 
-        # 这里使用自动混合精度训练，pytorch会在某些运算中自动进行精度转换。对于Ampere架构GPU，使用bfloat16精度可以获得更好的性能
-        # with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
-        #     logits, loss = model(x, y)
-
-        loss.backward()
         norm = nn.utils.clip_grad_norm_(model.parameters(), 1.0)    # 梯度裁剪
         lr = get_lr(step)    # 从调度器中获取学习率
         for param_group in optimizer.param_groups:
@@ -121,5 +130,5 @@ if __name__ == "__main__":
             torch.cuda.synchronize()
         t1 = time.time()
         dt = (t1 - t0) * 1000
-        tokens_per_sec = (dataloader.B * dataloader.T) / (t1 - t0)
-        print(f"step: {step} | loss: {loss.item()} | lr: {lr:.4e} | norm: {norm:.4f} | dt: {dt:.2f}ms | tokens/s: {tokens_per_sec:.2f}")
+        tokens_per_sec = (dataloader.B * dataloader.T * grad_accum_steps) / (t1 - t0)
+        print(f"step: {step} | loss: {loss_accum.item()} | lr: {lr:.4e} | norm: {norm:.4f} | dt: {dt:.2f}ms | tokens/s: {tokens_per_sec:.2f}")
